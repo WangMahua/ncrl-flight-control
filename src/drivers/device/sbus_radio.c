@@ -96,7 +96,7 @@ void sbus_rc_read(radio_t *rc)
 	/* aux-sw 1 mode */
 	float aux1_mode_up_thresh = (RC_FLIGHT_MODE_MAX + RC_FLIGHT_MODE_MID) / 2.0f;
 	float aux1_mode_low_thresh = (RC_FLIGHT_MODE_MID + RC_FLIGHT_MODE_MIN) / 2.0f;
-	if(aux1_mode_raw < aux1_mode_low_thresh) {
+	if(aux1_mode_raw < aux1_mode_low_thresh) { //channel 7
 		rc->aux1_mode = RC_AUX_MODE1;
 	} else if (aux1_mode_raw < aux1_mode_up_thresh && aux1_mode_raw > aux1_mode_low_thresh) {
 		rc->aux1_mode = RC_AUX_MODE2;
@@ -214,4 +214,10 @@ void debug_print_rc_info(void)
 
 	uart1_puts(s, strlen(s));
 	blocked_delay_ms(100);
+}
+
+void rc_qp_update(radio_t *rc, float roll_d, float pitch_d, float throttle_d){
+	rc -> roll = roll_d;
+	rc -> pitch = pitch_d;
+	rc -> throttle = throttle_d;
 }

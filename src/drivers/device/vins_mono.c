@@ -11,6 +11,9 @@
 #include "vins_mono.h"
 #include "sys_time.h"
 #include "debug_link.h"
+#include "sbus_radio.h"
+#include "attitude_state.h"
+
 
 #define VINS_MONO_IMU_MSG_SIZE 27
 #define VINS_MONO_CHECKSUM_INIT_VAL 19
@@ -82,9 +85,10 @@ void vins_mono_isr_handler(uint8_t c)
 	portEND_SWITCHING_ISR(higher_priority_task_woken);
 }
 
-void vins_mono_update(void)
+void vins_mono_update(bool *get_qp,float qp_fail)
 {
 	vins_mono_buf_c_t recept_c;
+	*get_qp = false;
 	while(xQueueReceive(vins_mono_queue, &recept_c, 0) == pdTRUE) {
 		uint8_t c = recept_c.c;
 
@@ -94,9 +98,11 @@ void vins_mono_update(void)
 			if(vins_mono_serial_decoder(vins_mono.buf) == 0) {
 				vins_mono.buf_pos = 0; //reset position pointer
 			}
+			*get_qp = true;
 		}
 
 	}
+	vins_mono.qp = qp_fail;
 }
 
 int vins_mono_serial_decoder(uint8_t *buf)
@@ -113,9 +119,10 @@ int vins_mono_serial_decoder(uint8_t *buf)
 	float q_enu[4];
 
 	/* decode position (enu frame) */
-	memcpy(&vins_mono.pos[0], &buf[3], sizeof(float));
-	memcpy(&vins_mono.pos[1], &buf[7], sizeof(float));
-	memcpy(&vins_mono.pos[2], &buf[11], sizeof(float));
+	//pos[0] = roll pos[1] = pitch pos[2] = throttle
+	memcpy(&vins_mono.qp_update[0], &buf[3], sizeof(float));
+	memcpy(&vins_mono.qp_update[1], &buf[7], sizeof(float));
+	memcpy(&vins_mono.qp_update[2], &buf[11], sizeof(float));
 
 	/* decode velocity (enu frame) */
 	memcpy(&vins_mono.vel_raw[0], &buf[15], sizeof(float));
@@ -177,14 +184,19 @@ float vins_mono_read_vel_z()
 }
 
 
-void send_vins_mono_imu_msg(void)
+void send_vins_mono_imu_msg(radio_t *rc)
 {
-	/*+------------+----------+---------+---------+---------+--------+--------+--------+----------+
-	 *| start byte | checksum | accel_x | accel_y | accel_z | gyro_x | gyro_y | gyro_z | end byte |
-	 *+------------+----------+---------+---------+---------+--------+--------+--------+----------+*/
+	/*+------------+----------+------+-------+-----+----------+--------------+---+-------+
+	 *| start byte | checksum | roll | pitch | yaw | throttle | rc channel 7 | - | end - |
+	 *+------------+----------+------+-------+-----+----------+--------------+---+-------+*/
 
 	float accel[3] = {0.0f};
 	float gyro[3] = {0.0f};
+	float attitude_roll;
+	float attitude_pitch;
+	float attitude_yaw;
+
+ 	get_attitude_euler_angles(&attitude_roll, &attitude_pitch, &attitude_yaw);
 
 	get_accel_lpf(accel);
 	get_gyro_lpf(gyro);
@@ -199,17 +211,17 @@ void send_vins_mono_imu_msg(void)
 	msg_pos += sizeof(uint8_t);
 
 	/* pack payloads */
-	memcpy(msg_buf + msg_pos, &accel[0], sizeof(float));
+	memcpy(msg_buf + msg_pos, &rc -> roll , sizeof(float));
+	msg_pos += sizeof(float); 
+	memcpy(msg_buf + msg_pos, &rc -> pitch, sizeof(float));
 	msg_pos += sizeof(float);
-	memcpy(msg_buf + msg_pos, &accel[1], sizeof(float));
+	memcpy(msg_buf + msg_pos, &attitude_yaw, sizeof(float));
 	msg_pos += sizeof(float);
-	memcpy(msg_buf + msg_pos, &accel[2], sizeof(float));
+	memcpy(msg_buf + msg_pos, &rc -> throttle, sizeof(float));
 	msg_pos += sizeof(float);
-	memcpy(msg_buf + msg_pos, &gyro[0], sizeof(float));
+	memcpy(msg_buf + msg_pos, &rc -> aux1_mode, sizeof(float));
 	msg_pos += sizeof(float);
-	memcpy(msg_buf + msg_pos, &gyro[1], sizeof(float));
-	msg_pos += sizeof(float);
-	memcpy(msg_buf + msg_pos, &gyro[2], sizeof(float));
+	memcpy(msg_buf + msg_pos, &attitude_pitch, sizeof(float));
 	msg_pos += sizeof(float);
 
 	msg_buf[msg_pos] = '+'; //end byte
@@ -221,7 +233,7 @@ void send_vins_mono_imu_msg(void)
 	uart6_puts(msg_buf, VINS_MONO_IMU_MSG_SIZE);
 }
 
-void vins_mono_send_imu_200hz(void)
+void vins_mono_send_imu_200hz(radio_t *rc)
 {
 	/* triggered every 2 times since the function is designed to be called by
 	 * flight control main loop (400Hz) */
@@ -229,7 +241,7 @@ void vins_mono_send_imu_200hz(void)
 	prescaler--;
 
 	if(prescaler == 0) {
-		send_vins_mono_imu_msg();
+		send_vins_mono_imu_msg(rc);
 		prescaler = 2;
 	}
 }
@@ -254,9 +266,9 @@ void vins_mono_camera_trigger_20hz(void)
 
 void send_vins_mono_position_debug_message(debug_msg_t *payload)
 {
-	float px = vins_mono.pos[0] * 100.0f; //[cm]
-	float py = vins_mono.pos[1] * 100.0f; //[cm]
-	float pz = vins_mono.pos[2] * 100.0f; //[cm]
+	float px = vins_mono.qp_update[0]  ; //[cm]
+	float py = vins_mono.qp_update[1] ; //[cm]
+	float pz = vins_mono.qp_update[2] ; //[cm]
 
 	pack_debug_debug_message_header(payload, MESSAGE_ID_VINS_MONO_POSITION);
 	pack_debug_debug_message_float(&px, payload);
@@ -266,11 +278,17 @@ void send_vins_mono_position_debug_message(debug_msg_t *payload)
 
 void send_vins_mono_quaternion_debug_message(debug_msg_t *payload)
 {
+
+	float px = vins_mono.qp_update[0]  ; //[cm]
+	float py = vins_mono.qp_update[1] ; //[cm]
+	float pz = vins_mono.qp_update[2] ; //[cm]
+	float qp_ = 1;
+	qp_ = (float)vins_mono.qp;
 	pack_debug_debug_message_header(payload, MESSAGE_ID_VINS_MONO_QUATERNION);
-	pack_debug_debug_message_float(&vins_mono.q[0], payload);
-	pack_debug_debug_message_float(&vins_mono.q[1], payload);
-	pack_debug_debug_message_float(&vins_mono.q[2], payload);
-	pack_debug_debug_message_float(&vins_mono.q[3], payload);
+	pack_debug_debug_message_float(&px, payload);
+	pack_debug_debug_message_float(&py, payload);
+	pack_debug_debug_message_float(&pz, payload);
+	pack_debug_debug_message_float(&qp_, payload);
 }
 
 void send_vins_mono_velocity_debug_message(debug_msg_t *payload)

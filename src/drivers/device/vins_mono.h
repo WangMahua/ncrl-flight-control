@@ -1,13 +1,15 @@
 #ifndef __VINS_MONO_H__
 #define __VINS_MONO_H__
-
+#include "sbus_radio.h"
 #define VINS_MONO_SERIAL_MSG_SIZE 44
 
 typedef struct {
 	uint8_t id;
+	float qp;
 
 	/* position [m] */
 	float pos[3];
+	float qp_update[3];
 
 	/* velocity (numerical differentiation) [m/s] */
 	float vel_raw[3];
@@ -33,13 +35,13 @@ int vins_mono_serial_decoder(uint8_t *buf);
 void vins_mono_isr_handler(uint8_t c);
 
 /* transmission of imu information for vins-mono */
-void send_vins_mono_imu_msg(void);
-void vins_mono_send_imu_200hz(void);
+void send_vins_mono_imu_msg(radio_t *rc);
+void vins_mono_send_imu_200hz(radio_t *rc);
 
 /* vins-mono camera triggering */
 void vins_mono_camera_trigger_20hz(void);
 
-void vins_mono_update(void);
+void vins_mono_update(bool *get_qp,float qp_fail); //check get msg
 bool vins_mono_available(void);
 
 float vins_mono_read_pos_x(void);

@@ -44,6 +44,9 @@ extern vins_mono_t vins_mono;
 SemaphoreHandle_t flight_ctrl_semphr;
 
 radio_t rc;
+radio_t rc_qp;
+bool rc_flag = false ;
+bool start_flag = false ;
 
 void flight_ctrl_semaphore_handler(void)
 {
@@ -150,6 +153,10 @@ void task_flight_ctrl(void *param)
 	enable_rgb_led_service();
 
 	float desired_yaw = 0.0f;
+	float qp_roll = 0.0f;
+	float qp_pitch = 0.0f;
+	float qp_throttle = 0.0f;
+	float qp_fail = 0.00;
 
 	/* flight control loop */
 	while(1) {
@@ -166,13 +173,37 @@ void task_flight_ctrl(void *param)
 		optitrack_update();
 #endif
 
+		sbus_rc_read(&rc); 
+		if(start_flag == false){ //ensure rcqp get value
+			qp_roll = rc.roll;
+			qp_pitch = rc.pitch;
+			qp_throttle = rc.throttle;	
+			start_flag = true;
+		}
+
 #if (SELECT_NAVIGATION_DEVICE2 == NAV_DEV2_USE_VINS_MONO)
 		vins_mono_camera_trigger_20hz();
-		vins_mono_send_imu_200hz();
-		vins_mono_update();
+		vins_mono_send_imu_200hz(&rc);
+		vins_mono_update(&rc_flag,qp_fail);
 #endif
+		sbus_rc_read(&rc_qp);
+		if(qp_fail < 40){  
+			if(rc_flag == true){ //get qp data
+				qp_roll = vins_mono.qp_update[0];
+				qp_pitch = vins_mono.qp_update[1];
+				qp_throttle = vins_mono.qp_update[2];	
+				qp_fail = 0;
+			}else{
+				qp_fail += 1;
+			}
+			rc_qp_update(&rc_qp,qp_roll,qp_pitch,qp_throttle);
+		}else{
+			if(rc_flag == true){
+				qp_fail = 0;
+			}
+		}
 
-		sbus_rc_read(&rc);
+		
 		rc_yaw_setpoint_handler(&desired_yaw, -rc.yaw, 0.0025);
 
 		/* attitude estimation */
@@ -188,7 +219,7 @@ void task_flight_ctrl(void *param)
 #if (SELECT_CONTROLLER == QUADROTOR_USE_PID)
 			multirotor_pid_control(&rc, &desired_yaw);
 #elif (SELECT_CONTROLLER == QUADROTOR_USE_GEOMETRY)
-			multirotor_geometry_control(&rc, &desired_yaw);
+			multirotor_geometry_control(&rc_qp, &desired_yaw);
 #endif
 		}
 		perf_end(PERF_CONTROLLER);

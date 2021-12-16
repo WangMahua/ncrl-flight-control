@@ -75,4 +75,6 @@ int rc_safety_check(radio_t *rc);
 void debug_print_rc_info(void);
 void debug_print_rc_val(void);
 
+void rc_qp_update(radio_t *rc, float roll_d, float pitch_d, float throttle_d);
+
 #endif
