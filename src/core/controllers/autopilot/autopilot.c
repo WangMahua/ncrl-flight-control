@@ -37,13 +37,13 @@ void autopilot_init(void)
 	autopilot.motor_locked = false;
 	autopilot.period = 1.0f / 400.0f;
 	autopilot.landing_speed = 0.6;   //[m/s]
-	autopilot.takeoff_speed = 0.25;  //[m/s]
+	autopilot.takeoff_speed = 0.15;  //[m/s]
 	autopilot.takeoff_height = 1.0f; //[m]
 	autopilot.landing_accept_height_lower = 0.10f; //[m]
 	autopilot.landing_accept_height_upper = 0.12f; //[m]
-	autopilot.tracking_speed = 0.5;  //[m/s]
+	autopilot.tracking_speed = 0.2;  //[m/s]
 	autopilot.land_avaliable = false;
-	autopilot.waypoint_touch_radius = 0.5; //[m]
+	autopilot.waypoint_touch_radius = 0.1; //[m]
 }
 
 bool autopilot_is_auto_flight_mode(void)

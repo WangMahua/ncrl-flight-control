@@ -495,64 +495,66 @@ void mr_geometry_ctrl_thrust_allocation(float *moment, float total_force)
 
 void rc_mode_handler_geometry_ctrl(radio_t *rc)
 {
+	static bool auto_flight_mode_last = false;
+
 	set_rgb_led_ncrl_link_flag(false);
 
 	multirotor_rc_special_function_handler(rc);
 
-	// armed
-	if(rc->safety == false) {
-
-		// auto mode
+	if(rc->safety == true) {
 		if(rc->auto_flight == true) {
-
 			autopilot_set_mode(AUTOPILOT_HOVERING_MODE);
-
-			//set desired position to current position
-			float curr_pos[3] = {0.0f};
-			get_enu_position(curr_pos);
-			autopilot_assign_pos_target(curr_pos[0], curr_pos[1], curr_pos[2]);
-			autopilot_assign_zero_vel_target();      //set desired velocity to zero
-			autopilot_assign_zero_acc_feedforward(); //set acceleration feedforward to zero
-
-			reset_geometry_tracking_error_integral();
-
 		} else {
-
-			// ncrl link mode 
 			if(rc->aux1_mode == 2){
-
 				autopilot_set_mode(NCRL_LINK_COMMAND_MODE);
-				set_rgb_led_ncrl_link_flag(true);
-
-				// get ncrl link data 
-				char mode = ncrl_link_get_mode();
-				char aux_info = ncrl_link_get_aux_info();
-				float target_pos[3] = {0.0f};
-				ncrl_link_get_target_enu(target_pos);
-				autopilot_assign_goto_target(target_pos[0], target_pos[1], target_pos[2]);
-				autopilot_assign_ncrl_link_command(mode,aux_info);
-
 			}else{
 				autopilot_set_mode(AUTOPILOT_MANUAL_FLIGHT_MODE);
-				autopilot_mission_reset();
-				autopilot_assign_pos_target(0.0f, 0.0f, 0.0f);
-				autopilot_assign_zero_vel_target();
-				autopilot_assign_zero_acc_feedforward();
-				reset_geometry_tracking_error_integral();
 			}
+
 		}
+	}
 
-	// not safe -> manual
-	}else{
-		autopilot_set_mode(AUTOPILOT_MANUAL_FLIGHT_MODE);
-		autopilot_mission_reset();
+	//if mode switched to auto-flight
+	if((rc->auto_flight == true) && (auto_flight_mode_last != true)) {
+		autopilot_set_mode(AUTOPILOT_HOVERING_MODE);
 
-		autopilot_assign_pos_target(0.0f, 0.0f, 0.0f);
-		autopilot_assign_zero_vel_target();
-		autopilot_assign_zero_acc_feedforward();
+		//set desired position to current position
+		float curr_pos[3] = {0.0f};
+		get_enu_position(curr_pos);
+		autopilot_assign_pos_target(curr_pos[0], curr_pos[1], curr_pos[2]);
+		autopilot_assign_zero_vel_target();      //set desired velocity to zero
+		autopilot_assign_zero_acc_feedforward(); //set acceleration feedforward to zero
 
 		reset_geometry_tracking_error_integral();
 	}
+
+	if(rc->auto_flight == false) {
+
+		if(rc->aux1_mode == 2){
+
+			autopilot_set_mode(NCRL_LINK_COMMAND_MODE);
+			set_rgb_led_ncrl_link_flag(true);
+
+			// get ncrl link data 
+			char mode = ncrl_link_get_mode();
+			char aux_info = ncrl_link_get_aux_info();
+			float target_pos[3] = {0.0f};
+			ncrl_link_get_target_enu(target_pos);
+			autopilot_assign_goto_target(target_pos[0], target_pos[1], target_pos[2]);
+			autopilot_assign_ncrl_link_command(mode,aux_info);
+
+		}else{
+
+			autopilot_set_mode(AUTOPILOT_MANUAL_FLIGHT_MODE);
+			autopilot_mission_reset();
+			autopilot_assign_pos_target(0.0f, 0.0f, 0.0f);
+			autopilot_assign_zero_vel_target();
+			autopilot_assign_zero_acc_feedforward();
+			reset_geometry_tracking_error_integral();
+		}
+	}
+
+	auto_flight_mode_last = rc->auto_flight;
 }
 
 void multirotor_geometry_control(radio_t *rc)
@@ -669,7 +671,7 @@ void multirotor_geometry_control(radio_t *rc)
 	lock_motor |= check_motor_lock_condition(curr_pos_enu[2] < 0.10f &&
 	                autopilot_get_mode() == AUTOPILOT_HOVERING_MODE);
 	//lock motor if current position is very close to ground in the ncrl link mode 
-	lock_motor |= check_motor_lock_condition(curr_pos_enu[2] < 0.15f &&
+	lock_motor |= check_motor_lock_condition(curr_pos_enu[2] < 0.20f &&
 	                ncrl_link_lock && autopilot_get_mode()==NCRL_LINK_COMMAND_MODE);
 	//lock motor if motors are locked by autopilot
 	lock_motor |= check_motor_lock_condition(autopilot_get_mode() == AUTOPILOT_MOTOR_LOCKED_MODE);

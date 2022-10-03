@@ -111,6 +111,7 @@ void optitrack_numerical_vel_calc(void)
 	optitrack.vel_filtered[0] = optitrack.vel_enu[0];
 	optitrack.vel_filtered[1] = optitrack.vel_enu[1];
 	optitrack.vel_filtered[2] = optitrack.vel_enu[2];
+	
 	//lpf(optitrack.vel_enu[0], &(optitrack.vel_filtered[0]), 0.8);
 	//lpf(optitrack.vel_enu[1], &(optitrack.vel_filtered[1]), 0.8);
 	//lpf(optitrack.vel_enu[2], &(optitrack.vel_filtered[2]), 0.8);
